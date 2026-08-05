@@ -10,8 +10,12 @@ from ..protocol import Paper
 
 S2_BULK_SEARCH_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 S2_FIELDS = "paperId,title,abstract,authors,url,venue,publicationDate,externalIds"
-# The free API key allows 1 request per second across all endpoints
+# The free API key allows 1 request per second across all endpoints, but the
+# service also returns sporadic 429s within that limit and expects clients to
+# retry with backoff.
 S2_REQUEST_INTERVAL = 1.1
+S2_MAX_RETRIES = 4
+S2_RETRY_BACKOFF = 2  # seconds; doubles on each retry: 2, 4, 8
 
 
 @register_retriever("semantic_scholar")
@@ -36,26 +40,36 @@ class SemanticScholarRetriever(BaseRetriever):
         items: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for query in self.retriever_config.queries:
-            params = {
-                "query": query,
-                "publicationDateOrYear": f"{since}:",
-                "fields": S2_FIELDS,
-            }
-            try:
-                response = requests.get(S2_BULK_SEARCH_API, params=params, headers=headers, timeout=30)
-                response.raise_for_status()
-                for item in response.json().get("data", []):
-                    paper_id = item.get("paperId")
-                    if paper_id and paper_id not in seen_ids:
-                        seen_ids.add(paper_id)
-                        items.append(item)
-            except Exception as e:
-                # A failing query must not kill the whole daily run
-                logger.error(f"Semantic Scholar query failed ({query}): {e}")
+            for item in self._search_with_retry(query, since, headers):
+                paper_id = item.get("paperId")
+                if paper_id and paper_id not in seen_ids:
+                    seen_ids.add(paper_id)
+                    items.append(item)
             sleep(S2_REQUEST_INTERVAL)
         if self.config.executor.debug:
             items = items[:10]
         return items
+
+    def _search_with_retry(self, query: str, since: str, headers: dict) -> list[dict[str, Any]]:
+        params = {
+            "query": query,
+            "publicationDateOrYear": f"{since}:",
+            "fields": S2_FIELDS,
+        }
+        for attempt in range(S2_MAX_RETRIES):
+            try:
+                response = requests.get(S2_BULK_SEARCH_API, params=params, headers=headers, timeout=30)
+                response.raise_for_status()
+                return response.json().get("data", [])
+            except Exception as e:
+                if attempt == S2_MAX_RETRIES - 1:
+                    # A failing query must not kill the whole daily run
+                    logger.error(f"Semantic Scholar query failed ({query}): {e}")
+                    return []
+                wait = S2_RETRY_BACKOFF * (2 ** attempt)
+                logger.warning(f"Semantic Scholar query errored ({e}); retrying in {wait}s")
+                sleep(wait)
+        return []
 
     def convert_to_paper(self, raw_paper: dict[str, Any]) -> Paper | None:
         title = raw_paper.get("title")
