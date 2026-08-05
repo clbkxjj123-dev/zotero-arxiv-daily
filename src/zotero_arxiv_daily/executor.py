@@ -11,6 +11,23 @@ from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
 from tqdm import tqdm
+import re
+
+
+def deduplicate_papers(papers:list) -> list:
+    """Drop cross-source duplicates (e.g. the same paper from arXiv and
+    Semantic Scholar) by normalized title. The first occurrence wins, so
+    sources listed earlier in executor.source take priority."""
+    seen_titles = set()
+    unique_papers = []
+    for paper in papers:
+        normalized = re.sub(r"^\[[^\]]*\]\s*", "", paper.title)  # strip "[venue] " prefix
+        normalized = re.sub(r"[^0-9a-z一-鿿]+", "", normalized.lower())
+        if normalized and normalized in seen_titles:
+            continue
+        seen_titles.add(normalized)
+        unique_papers.append(paper)
+    return unique_papers
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -105,6 +122,10 @@ class Executor:
                 continue
             logger.info(f"Retrieved {len(papers)} {source} papers")
             all_papers.extend(papers)
+        deduped_papers = deduplicate_papers(all_papers)
+        if len(deduped_papers) < len(all_papers):
+            logger.info(f"Removed {len(all_papers) - len(deduped_papers)} cross-source duplicates")
+        all_papers = deduped_papers
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
         reranked_papers = []
         if len(all_papers) > 0:

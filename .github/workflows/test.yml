@@ -26,6 +26,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
         run: |
           export DEBUG=true

@@ -12,6 +12,24 @@ source:
     category: null # The categories of target biorxiv papers. Find categories from [here](https://www.biorxiv.org/). Example: ["biochemistry","animal behavior and cognition"]
   medrxiv:
     category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
+  crossref:
+    issn: null # A list of journal ISSNs to track via Crossref. Example: ["0034-4257","0924-2716"]
+    days_back: 2 # How many days back to look for newly indexed papers.
+    rows: 100 # Page size for the Crossref API.
+    mailto: null # Contact email for the Crossref polite pool (recommended). Example: abc@qq.com
+  semantic_scholar:
+    api_key: null # Semantic Scholar API key. Get one from https://www.semanticscholar.org/product/api
+    queries: null # A list of bulk-search queries (boolean syntax supported). Example: ['"tree crown" + segmentation']
+    days_back: 3 # How many days back to look for published papers.
+  imap_digest:
+    server: null # IMAP server of the mailbox receiving alert emails. Example: imap.qq.com
+    port: 993 # IMAP SSL port.
+    user: null # IMAP account. Example: abc@qq.com
+    password: null # IMAP password or authorization code.
+    folder: INBOX # Mailbox folder to read.
+    senders: null # Only parse unread mails from these senders. Example: ["scholaralerts-noreply@google.com"]
+    mark_seen: true # Mark successfully parsed mails as read so they are processed exactly once.
+    max_emails: 50 # Maximum unread mails to parse per sender per run.
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
