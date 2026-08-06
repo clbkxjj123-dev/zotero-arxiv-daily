@@ -14,8 +14,8 @@ S2_FIELDS = "paperId,title,abstract,authors,url,venue,publicationDate,externalId
 # service also returns sporadic 429s within that limit and expects clients to
 # retry with backoff.
 S2_REQUEST_INTERVAL = 1.1
-S2_MAX_RETRIES = 4
-S2_RETRY_BACKOFF = 2  # seconds; doubles on each retry: 2, 4, 8
+S2_MAX_RETRIES = 6
+S2_RETRY_BACKOFF = 2  # seconds; doubles on each retry: 2, 4, 8, 16, 32
 
 
 @register_retriever("semantic_scholar")

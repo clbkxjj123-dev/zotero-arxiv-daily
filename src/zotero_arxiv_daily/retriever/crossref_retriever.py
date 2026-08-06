@@ -25,8 +25,12 @@ class CrossrefRetriever(BaseRetriever):
         days_back = self.retriever_config.get("days_back", 2)
         since = (date.today() - timedelta(days=days_back)).isoformat()
         filters = [f"issn:{i}" for i in self.retriever_config.issn]
-        filters += [f"from-index-date:{since}", "type:journal-article"]
+        # from-created-date = when the DOI was first registered (genuinely new
+        # papers). Never use from-index-date here: Crossref bulk re-indexes old
+        # records daily, which once returned 5000+ decade-old papers as "new".
+        filters += [f"from-created-date:{since}", "type:journal-article"]
         rows = self.retriever_config.get("rows", 100)
+        max_papers = self.retriever_config.get("max_papers", 300)
         params = {
             "filter": ",".join(filters),
             "rows": rows,
@@ -43,6 +47,13 @@ class CrossrefRetriever(BaseRetriever):
                 message = response.json()["message"]
                 batch = message.get("items", [])
                 items.extend(batch)
+                if len(items) >= max_papers:
+                    logger.warning(
+                        f"Crossref returned more than {max_papers} papers; "
+                        "truncating. Check the ISSN list and days_back if this persists."
+                    )
+                    items = items[:max_papers]
+                    break
                 if len(batch) < rows or not message.get("next-cursor"):
                     break
                 params["cursor"] = message["next-cursor"]
