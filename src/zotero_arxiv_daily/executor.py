@@ -11,6 +11,8 @@ from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
 from tqdm import tqdm
+import json
+import os
 import re
 
 
@@ -139,7 +141,38 @@ class Executor:
         elif not self.config.executor.send_empty:
             logger.info("No new papers found. No email will be sent.")
             return
+        if export_dir := self.config.executor.get("export_json_dir"):
+            self.export_json(reranked_papers, export_dir)
         logger.info("Sending email...")
-        email_content = render_email(reranked_papers)
+        email_content = render_email(reranked_papers, self.config.executor.get("card_page_url"))
         send_email(self.config, email_content)
         logger.info("Email sent successfully")
+
+    def export_json(self, papers, export_dir:str):
+        """Dump the ranked papers as JSON for the card triage page."""
+        os.makedirs(export_dir, exist_ok=True)
+        today = datetime.now().strftime('%Y-%m-%d')
+        records = []
+        for p in papers:
+            raw_title = re.sub(r"^\[[^\]]*\]\s*", "", p.title)
+            # An abstract equal to the title is a retriever fallback, not a real abstract
+            abstract = p.abstract if p.abstract not in (p.title, raw_title) else ""
+            records.append({
+                "title": p.title,
+                "authors": list(p.authors or []),
+                "abstract": abstract,
+                "tldr": p.tldr,
+                "url": p.url,
+                "pdf_url": p.pdf_url,
+                "score": round(p.score, 2) if p.score is not None else None,
+                "source": p.source,
+            })
+        with open(os.path.join(export_dir, f"{today}.json"), "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False)
+        dates = sorted(
+            name[:-5] for name in os.listdir(export_dir)
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", name)
+        )
+        with open(os.path.join(export_dir, "index.json"), "w", encoding="utf-8") as f:
+            json.dump(dates, f)
+        logger.info(f"Exported {len(records)} papers to {export_dir}/{today}.json")

@@ -104,8 +104,16 @@ def get_stars(score:float):
         return '<div class="star-wrapper">'+full_star * full_star_num + half_star * half_star_num + '</div>'
 
 
-def render_email(papers:list[Paper]) -> str:
+def render_email(papers:list[Paper], card_page_url:str=None) -> str:
     parts = []
+    if card_page_url:
+        parts.append(
+            f'<div style="padding: 4px 0 12px 0;">'
+            f'<a href="{card_page_url}" style="display: inline-block; text-decoration: none; '
+            f'font-size: 15px; font-weight: bold; color: #fff; background-color: #337ab7; '
+            f'padding: 10px 20px; border-radius: 6px;">🗂 打开今日卡片筛选页(逐篇保留/跳过,批量抓取进 Zotero)</a>'
+            f'</div>'
+        )
     if len(papers) == 0 :
         return framework.replace('__CONTENT__', get_empty_html())
     

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日文献卡片</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1c1e21; --muted: #65676b;
+    --accent: #2563eb; --keep: #16a34a; --skip: #9ca3af; --danger: #dc2626;
+    --border: #e4e6eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 16px 12px 120px; }
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  select, button, input {
+    font: inherit; border-radius: 8px; border: 1px solid var(--border);
+    padding: 8px 12px; background: var(--card); color: var(--text);
+  }
+  button { cursor: pointer; }
+  .progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 14px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; box-shadow: 0 4px 16px rgba(0,0,0,.06);
+  }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; }
+  .badge.score { background: #fef3c7; color: #92400e; }
+  .badge.src { background: #ecfdf5; color: #065f46; }
+  .card h2 { font-size: 18px; line-height: 1.4; margin: 0 0 8px; }
+  .card h2 a { color: var(--text); text-decoration: none; }
+  .card h2 a:hover { color: var(--accent); }
+  .authors { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .tldr { font-size: 14.5px; line-height: 1.65; background: #f8fafc; border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: 0 8px 8px 0; }
+  details { margin-top: 10px; font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  details summary { cursor: pointer; color: var(--accent); }
+  .cardlinks { margin-top: 12px; }
+  .cardlinks a { color: var(--accent); font-size: 14px; text-decoration: none; margin-right: 16px; }
+  .actions {
+    position: fixed; bottom: 0; left: 0; right: 0; background: var(--card);
+    border-top: 1px solid var(--border); padding: 12px;
+  }
+  .actions .inner { max-width: 680px; margin: 0 auto; display: flex; gap: 10px; }
+  .actions button { flex: 1; padding: 14px 0; font-size: 16px; font-weight: 600; border: none; border-radius: 10px; color: #fff; }
+  .btn-skip { background: var(--skip); }
+  .btn-keep { background: var(--keep); }
+  .btn-undo { flex: 0 0 64px !important; background: #f3f4f6 !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+  .hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .kept-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .kept-item a { color: var(--text); text-decoration: none; font-weight: 600; font-size: 15px; }
+  .kept-item a:hover { color: var(--accent); }
+  .kept-item .meta { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  .toolbar button { font-size: 14px; }
+  .btn-primary { background: var(--accent); color: #fff; border: none; }
+  .btn-outline { background: var(--card); }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+  .modal { background: var(--card); border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; }
+  .modal h3 { margin: 0 0 10px; font-size: 16px; }
+  .modal input { width: 100%; margin: 8px 0; }
+  .modal .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  .status { font-size: 13.5px; margin-top: 10px; white-space: pre-wrap; }
+  .empty { text-align: center; color: var(--muted); padding: 60px 0; }
+  .remove { color: var(--danger); background: none; border: none; font-size: 13px; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🗂 每日文献卡片</h1>
+    <select id="dateSel"></select>
+    <button id="summaryBtn" class="btn-outline">已保留 <span id="keptCount">0</span></button>
+  </header>
+  <div id="main"></div>
+</div>
+<div class="actions" id="deckActions" hidden>
+  <div class="inner">
+    <button class="btn-undo" id="undoBtn" title="撤销 (Z)">↩</button>
+    <button class="btn-skip" id="skipBtn">⏭ 跳过</button>
+    <button class="btn-keep" id="keepBtn">⭐ 保留</button>
+  </div>
+  <div class="hint">键盘:← 跳过 · → 保留 · Z 撤销</div>
+</div>
+
+<script>
+const ZOTERO_USER_ID = "9419861";
+const state = { dates: [], date: null, papers: [], decisions: {}, cursor: 0 };
+
+const $ = id => document.getElementById(id);
+const store = {
+  get k() { return `zad:decisions:${state.date}`; },
+  load() { try { return JSON.parse(localStorage.getItem(this.k)) || {}; } catch { return {}; } },
+  save() { localStorage.setItem(this.k, JSON.stringify(state.decisions)); },
+};
+
+async function init() {
+  let dates = [];
+  try { dates = await (await fetch("data/index.json", {cache: "no-store"})).json(); } catch {}
+  if (!dates.length) {
+    $("main").innerHTML = '<div class="empty">还没有任何数据。<br>第一次每日运行完成后,这里会出现当天的论文卡片。</div>';
+    return;
+  }
+  state.dates = dates.slice().reverse();
+  const urlDate = new URLSearchParams(location.search).get("date");
+  state.date = state.dates.includes(urlDate) ? urlDate : state.dates[0];
+  $("dateSel").innerHTML = state.dates.map(d => `<option ${d === state.date ? "selected" : ""}>${d}</option>`).join("");
+  $("dateSel").onchange = e => { state.date = e.target.value; loadDay(); };
+  await loadDay();
+}
+
+async function loadDay() {
+  try {
+    state.papers = await (await fetch(`data/${state.date}.json`, {cache: "no-store"})).json();
+  } catch {
+    $("main").innerHTML = '<div class="empty">该日期数据加载失败。</div>';
+    return;
+  }
+  state.decisions = store.load();
+  render();
+}
+
+function nextUndecided() {
+  for (let i = 0; i < state.papers.length; i++) if (!state.decisions[i]) return i;
+  return -1;
+}
+function keptIndices() {
+  return Object.keys(state.decisions).filter(i => state.decisions[i] === "keep").map(Number);
+}
+function decidedCount() { return Object.keys(state.decisions).length; }
+
+function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function splitVenue(title) {
+  const m = (title || "").match(/^\[([^\]]+)\]\s*(.*)$/s);
+  return m ? { venue: m[1], title: m[2] } : { venue: "", title: title || "" };
+}
+
+function render() {
+  $("keptCount").textContent = keptIndices().length;
+  const idx = nextUndecided();
+  if (idx === -1) { renderSummary(); return; }
+  state.cursor = idx;
+  const p = state.papers[idx];
+  const { venue, title } = splitVenue(p.title);
+  const link = p.pdf_url || p.url || "#";
+  const done = decidedCount();
+  $("deckActions").hidden = false;
+  $("main").innerHTML = `
+    <div class="progress">第 ${done + 1} / ${state.papers.length} 篇 · 已保留 ${keptIndices().length} 篇</div>
+    <div class="bar"><div style="width:${(done / state.papers.length) * 100}%"></div></div>
+    <div class="card">
+      <div class="badges">
+        ${venue ? `<span class="badge">${esc(venue)}</span>` : ""}
+        <span class="badge src">${esc(p.source || "")}</span>
+        ${p.score != null ? `<span class="badge score">相关度 ${p.score}</span>` : ""}
+      </div>
+      <h2><a href="${esc(link)}" target="_blank" rel="noopener">${esc(title)}</a></h2>
+      <div class="authors">${esc((p.authors || []).slice(0, 8).join(", "))}${(p.authors || []).length > 8 ? " 等" : ""}</div>
+      <div class="tldr">${esc(p.tldr || "(无 TLDR)")}</div>
+      ${p.abstract ? `<details><summary>原文摘要</summary>${esc(p.abstract)}</details>` : ""}
+      <div class="cardlinks">
+        ${p.pdf_url ? `<a href="${esc(p.pdf_url)}" target="_blank" rel="noopener">📄 PDF</a>` : ""}
+        ${p.url && p.url !== p.pdf_url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">🔗 论文页面</a>` : ""}
+      </div>
+    </div>`;
+}
+
+function renderSummary() {
+  $("deckActions").hidden = true;
+  const kept = keptIndices();
+  const items = kept.map(i => {
+    const p = state.papers[i];
+    const { venue, title } = splitVenue(p.title);
+    return `<div class="kept-item">
+      <a href="${esc(p.pdf_url || p.url || "#")}" target="_blank" rel="noopener">${esc(title)}</a>
+      <div class="meta">${venue ? esc(venue) + " · " : ""}${esc(p.source)} · 相关度 ${p.score ?? "?"}
+        <button class="remove" onclick="unkeep(${i})">移除</button></div>
+    </div>`;
+  }).join("");
+  $("main").innerHTML = `
+    <div class="progress">${state.date} · 共 ${state.papers.length} 篇,保留 ${kept.length} 篇</div>
+    <div class="toolbar">
+      <button class="btn-primary" onclick="pushToZotero()" ${kept.length ? "" : "disabled"}>📚 推送到 Zotero</button>
+      <button class="btn-outline" onclick="exportRIS()" ${kept.length ? "" : "disabled"}>⬇ 导出 RIS</button>
+      <button class="btn-outline" onclick="copyTitles()" ${kept.length ? "" : "disabled"}>📋 复制清单</button>
+      <button class="btn-outline" onclick="continueTriage()" ${nextUndecided() === -1 ? "disabled" : ""}>▶ 继续筛选</button>
+      <button class="btn-outline" onclick="resetDay()">🔄 重新筛选</button>
+    </div>
+    <div id="pushStatus" class="status"></div>
+    ${items || '<div class="empty">还没有保留任何论文。</div>'}
+    <p class="note">「推送到 Zotero」直接把保留的论文写入你的 Zotero 云端库(我的文库,带 daily-papers 标签),
+    Zotero 客户端同步后即可看到。API Key 只保存在本机浏览器里。</p>`;
+}
+
+function decide(v) {
+  const idx = nextUndecided();
+  if (idx === -1) return;
+  state.decisions[idx] = v;
+  store.save();
+  render();
+}
+function undo() {
+  const decided = Object.keys(state.decisions).map(Number).sort((a, b) => a - b);
+  if (!decided.length) return;
+  delete state.decisions[decided[decided.length - 1]];
+  store.save();
+  render();
+}
+function unkeep(i) { state.decisions[i] = "skip"; store.save(); renderSummary(); $("keptCount").textContent = keptIndices().length; }
+function continueTriage() { render(); }
+function resetDay() {
+  if (!confirm("清空本日所有跳过/保留记录,重新开始?")) return;
+  state.decisions = {}; store.save(); render();
+}
+
+$("skipBtn").onclick = () => decide("skip");
+$("keepBtn").onclick = () => decide("keep");
+$("undoBtn").onclick = undo;
+$("summaryBtn").onclick = renderSummary;
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "ArrowLeft") decide("skip");
+  else if (e.key === "ArrowRight") decide("keep");
+  else if (e.key.toLowerCase() === "z") undo();
+});
+
+/* ---------- Zotero push ---------- */
+function getZoteroKey(cb) {
+  const saved = localStorage.getItem("zad:zoteroKey");
+  if (saved) { cb(saved); return; }
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="modal">
+    <h3>输入 Zotero API Key</h3>
+    <div class="note">在 zotero.org → Settings → Security → Create new private key 创建
+    (需勾选 Allow write access)。Key 只保存在本机浏览器。</div>
+    <input id="zkInput" type="password" placeholder="Zotero API Key">
+    <div class="row"><button class="btn-outline" id="zkCancel">取消</button>
+    <button class="btn-primary" id="zkOk">保存并推送</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector("#zkCancel").onclick = () => bg.remove();
+  bg.querySelector("#zkOk").onclick = () => {
+    const v = bg.querySelector("#zkInput").value.trim();
+    if (!v) return;
+    localStorage.setItem("zad:zoteroKey", v);
+    bg.remove(); cb(v);
+  };
+}
+
+function toZoteroItem(p) {
+  const { venue, title } = splitVenue(p.title);
+  const isJournal = p.source === "crossref" && venue;
+  const item = {
+    itemType: isJournal ? "journalArticle" : "preprint",
+    title,
+    creators: (p.authors || []).slice(0, 60).map(n => ({ creatorType: "author", name: n })),
+    abstractNote: p.abstract || p.tldr || "",
+    url: p.url || "",
+    tags: [{ tag: "daily-papers" }],
+  };
+  if (isJournal) item.publicationTitle = venue;
+  const doi = (p.url || "").match(/doi\.org\/(10\.[^?#\s]+)/i);
+  if (doi) item.DOI = decodeURIComponent(doi[1]);
+  return item;
+}
+
+async function pushToZotero() {
+  getZoteroKey(async key => {
+    const kept = keptIndices().map(i => state.papers[i]);
+    const statusEl = $("pushStatus");
+    statusEl.textContent = `推送中… 0/${kept.length}`;
+    let ok = 0, fail = 0;
+    try {
+      for (let i = 0; i < kept.length; i += 25) {
+        const chunk = kept.slice(i, i + 25).map(toZoteroItem);
+        const resp = await fetch(`https://api.zotero.org/users/${ZOTERO_USER_ID}/items`, {
+          method: "POST",
+          headers: { "Zotero-API-Key": key, "Content-Type": "application/json" },
+          body: JSON.stringify(chunk),
+        });
+        if (resp.status === 403) { statusEl.textContent = "❌ Key 无效或没有写权限,请重新创建带写权限的 Key。"; localStorage.removeItem("zad:zoteroKey"); return; }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const result = await resp.json();
+        ok += Object.keys(result.successful || {}).length + Object.keys(result.unchanged || {}).length;
+        fail += Object.keys(result.failed || {}).length;
+        statusEl.textContent = `推送中… ${Math.min(i + 25, kept.length)}/${kept.length}`;
+      }
+      statusEl.textContent = `✅ 完成:成功 ${ok} 篇${fail ? `,失败 ${fail} 篇` : ""}。打开 Zotero 同步即可看到(标签 daily-papers)。`;
+    } catch (e) {
+      statusEl.textContent = `❌ 推送失败(${e.message})。可改用「导出 RIS」,把文件拖进 Zotero 即可。`;
+    }
+  });
+}
+
+/* ---------- RIS export / copy ---------- */
+function exportRIS() {
+  const kept = keptIndices().map(i => state.papers[i]);
+  const ris = kept.map(p => {
+    const { venue, title } = splitVenue(p.title);
+    const lines = [`TY  - ${p.source === "crossref" && venue ? "JOUR" : "GEN"}`, `TI  - ${title}`];
+    (p.authors || []).forEach(a => lines.push(`AU  - ${a}`));
+    if (venue) lines.push(`JO  - ${venue}`);
+    if (p.abstract) lines.push(`AB  - ${p.abstract}`);
+    if (p.url) lines.push(`UR  - ${p.url}`);
+    const doi = (p.url || "").match(/doi\.org\/(10\.[^?#\s]+)/i);
+    if (doi) lines.push(`DO  - ${decodeURIComponent(doi[1])}`);
+    lines.push("ER  - ");
+    return lines.join("\n");
+  }).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ris], { type: "application/x-research-info-systems" }));
+  a.download = `papers-${state.date}.ris`;
+  a.click();
+}
+function copyTitles() {
+  const kept = keptIndices().map(i => state.papers[i]);
+  const text = kept.map(p => { const { title } = splitVenue(p.title); return `- ${title}\n  ${p.url || p.pdf_url || ""}`; }).join("\n");
+  navigator.clipboard.writeText(text).then(() => { $("pushStatus").textContent = "✅ 已复制到剪贴板"; });
+}
+
+init();
+</script>
+</body>
+</html>

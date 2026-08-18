@@ -68,3 +68,5 @@ executor:
   max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
   source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'
+  export_json_dir: null # Directory to dump the ranked papers as JSON for the card triage page. Example: docs/data
+  card_page_url: null # URL of the card triage page, linked at the top of the email. Example: https://user.github.io/zotero-arxiv-daily/

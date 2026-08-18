@@ -34,3 +34,19 @@ jobs:
           echo "Use custom config: "
           cat config/custom.yaml
           uv run src/zotero_arxiv_daily/main.py
+
+      - name: Commit daily recommendation data
+        run: |
+          if [ -n "$(git status --porcelain docs/data)" ]; then
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add docs/data
+            git commit -m "data: daily recommendations $(date -u +%F)"
+            for i in 1 2 3; do
+              git push origin main && break
+              git pull --rebase origin main || true
+              [ "$i" = 3 ] && exit 1
+            done
+          else
+            echo "No data changes to commit"
+          fi
