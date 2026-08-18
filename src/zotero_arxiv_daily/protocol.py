@@ -23,11 +23,23 @@ class Paper:
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')
-        prompt = f"Given the following information of a paper, generate a one-sentence TLDR summary in {lang}:\n\n"
+        prompt = (
+            f"Given the following information of a paper, write a concise summary in {lang} "
+            "of 3-5 sentences covering: the research problem, the method or approach, and the "
+            "key results (include concrete numbers such as accuracy or improvements when present). "
+            "Output only the summary text itself, without any preamble like 'Here is the summary'. "
+            "If only a title or search keywords are provided without a real abstract or full text, "
+            "do NOT invent findings; instead reply with one short sentence stating what the paper "
+            "appears to be about based on its title, prefixed with '(仅含标题)' when the language is Chinese "
+            "or '(title only)' otherwise.\n\n"
+        )
         if self.title:
             prompt += f"Title:\n {self.title}\n\n"
 
-        if self.abstract:
+        # An abstract identical to the title is a retriever fallback for
+        # abstract-less sources; presenting it as a real abstract would
+        # invite the model to fabricate findings.
+        if self.abstract and self.abstract != self.title:
             prompt += f"Abstract: {self.abstract}\n\n"
 
         if self.full_text:

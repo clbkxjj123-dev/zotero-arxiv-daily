@@ -11,21 +11,38 @@ from .base import BaseRetriever, register_retriever
 from .html_text import strip_html
 from ..protocol import Paper
 
-# One entry in a Google Scholar alert email: linked title, green byline
-# (authors - venue, year), then the snippet div.
-GS_ENTRY_RE = re.compile(
-    r'<a[^>]+class="gse_alrt_title"[^>]*href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>'
-    r".*?<div[^>]*color:#006621[^>]*>(?P<byline>.*?)</div>"
-    r'.*?<div[^>]*class="gse_alrt_sni"[^>]*>(?P<snippet>.*?)</div>',
+# One entry in a Google Scholar alert email starts with the linked title
+# (attribute order varies: href may come before class="gse_alrt_title"),
+# followed by a green byline div (authors - venue, year) and a snippet div.
+# Entries are parsed chunk-wise between title anchors so a missing byline or
+# snippet in one entry cannot swallow content from the next one.
+GS_TITLE_RE = re.compile(
+    r'<a\b(?=[^>]*class="gse_alrt_title")[^>]*href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>',
     re.DOTALL | re.IGNORECASE,
 )
+GS_BYLINE_RE = re.compile(r"<div[^>]*color:#006621[^>]*>(.*?)</div>", re.DOTALL | re.IGNORECASE)
+GS_SNIPPET_RE = re.compile(r'<div[^>]*class="gse_alrt_sni"[^>]*>(.*?)</div>', re.DOTALL | re.IGNORECASE)
 # Fallback for other alert providers (CNKI, Wanfang, publisher alerts):
 # any link whose visible text is long enough to be a paper title.
 GENERIC_LINK_RE = re.compile(
     r'<a[^>]+href="(?P<url>https?://[^"]+)"[^>]*>(?P<title>[^<]{12,})</a>',
     re.IGNORECASE,
 )
-IGNORED_URL_KEYWORDS = ("unsubscribe", "privacy", "settings", "preferences", "help", "support")
+IGNORED_URL_KEYWORDS = (
+    "unsubscribe", "privacy", "settings", "preferences", "help", "support",
+    # Google Scholar service links (save/share buttons, alert management)
+    "scholar.google.com/citations", "scholar_share", "scholar_alerts", "scholar_settings",
+)
+
+
+def looks_like_query_echo(title: str) -> bool:
+    """The alert email repeats the search query as a link, e.g.
+    ["individual tree" detection OR segmentation ...] - that is not a paper."""
+    if title.startswith("["):
+        return True
+    if " OR " in title or " AND " in title:
+        return True
+    return title.endswith(("新的结果", "new results"))
 
 
 @register_retriever("imap_digest")
@@ -115,16 +132,27 @@ class ImapDigestRetriever(BaseRetriever):
         return html or plain
 
     def _parse_entries(self, html: str, sender: str) -> list[dict[str, Any]]:
-        entries = [
-            {
-                "title": strip_html(m.group("title")),
-                "byline": strip_html(m.group("byline")),
-                "snippet": strip_html(m.group("snippet")),
-                "url": self._unwrap_redirect(m.group("url")),
+        entries = []
+        anchors = list(GS_TITLE_RE.finditer(html))
+        for i, anchor in enumerate(anchors):
+            title = strip_html(anchor.group("title"))
+            if not title or looks_like_query_echo(title):
+                continue
+            # Scholar service links (alert settings, ...) also carry the
+            # gse_alrt_title class; filter them by URL keywords.
+            if any(keyword in anchor.group("url").lower() for keyword in IGNORED_URL_KEYWORDS):
+                continue
+            chunk_end = anchors[i + 1].start() if i + 1 < len(anchors) else len(html)
+            chunk = html[anchor.end():chunk_end]
+            byline = GS_BYLINE_RE.search(chunk)
+            snippet = GS_SNIPPET_RE.search(chunk)
+            entries.append({
+                "title": title,
+                "byline": strip_html(byline.group(1)) if byline else "",
+                "snippet": strip_html(snippet.group(1)) if snippet else "",
+                "url": self._unwrap_redirect(anchor.group("url")),
                 "sender": sender,
-            }
-            for m in GS_ENTRY_RE.finditer(html)
-        ]
+            })
         if entries:
             return entries
         for m in GENERIC_LINK_RE.finditer(html):
@@ -132,7 +160,7 @@ class ImapDigestRetriever(BaseRetriever):
             if any(keyword in url.lower() for keyword in IGNORED_URL_KEYWORDS):
                 continue
             title = strip_html(m.group("title"))
-            if not title:
+            if not title or looks_like_query_echo(title):
                 continue
             entries.append({"title": title, "byline": "", "snippet": "", "url": url, "sender": sender})
         return entries
