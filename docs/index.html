@@ -71,6 +71,7 @@
   .status { font-size: 13.5px; margin-top: 10px; white-space: pre-wrap; }
   .empty { text-align: center; color: var(--muted); padding: 60px 0; }
   .remove { color: var(--danger); background: none; border: none; font-size: 13px; padding: 2px 6px; }
+  .arch-toggle { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -78,6 +79,7 @@
   <header>
     <h1>🗂 每日文献卡片</h1>
     <select id="dateSel"></select>
+    <label class="arch-toggle"><input type="checkbox" id="showArchived"> 含已归档</label>
     <button id="summaryBtn" class="btn-outline">已保留 <span id="keptCount">0</span></button>
   </header>
   <div id="main"></div>
@@ -102,6 +104,26 @@ const store = {
   save() { localStorage.setItem(this.k, JSON.stringify(state.decisions)); },
 };
 
+/* ---------- archived dates ---------- */
+function getArchived() { try { return JSON.parse(localStorage.getItem("zad:archived")) || []; } catch { return []; } }
+function isArchived(d) { return getArchived().includes(d); }
+function setArchived(d, v) {
+  const a = new Set(getArchived());
+  v ? a.add(d) : a.delete(d);
+  localStorage.setItem("zad:archived", JSON.stringify([...a]));
+}
+function visibleDates() {
+  const showAll = $("showArchived").checked;
+  const vis = state.dates.filter(d => showAll || !isArchived(d));
+  return vis.length ? vis : state.dates; // never leave the picker empty
+}
+function renderDateOptions() {
+  const vis = visibleDates();
+  if (!vis.includes(state.date)) state.date = vis[0];
+  $("dateSel").innerHTML = vis.map(d =>
+    `<option value="${d}" ${d === state.date ? "selected" : ""}>${isArchived(d) ? "✓ " : ""}${d}</option>`).join("");
+}
+
 async function init() {
   let dates = [];
   try { dates = await (await fetch("data/index.json", {cache: "no-store"})).json(); } catch {}
@@ -111,9 +133,11 @@ async function init() {
   }
   state.dates = dates.slice().reverse();
   const urlDate = new URLSearchParams(location.search).get("date");
-  state.date = state.dates.includes(urlDate) ? urlDate : state.dates[0];
-  $("dateSel").innerHTML = state.dates.map(d => `<option ${d === state.date ? "selected" : ""}>${d}</option>`).join("");
+  state.date = state.dates.includes(urlDate) ? urlDate
+    : (state.dates.find(d => !isArchived(d)) || state.dates[0]);
+  renderDateOptions();
   $("dateSel").onchange = e => { state.date = e.target.value; loadDay(); };
+  $("showArchived").onchange = () => { renderDateOptions(); state.date = $("dateSel").value; loadDay(); };
   await loadDay();
 }
 
@@ -243,6 +267,7 @@ function renderSummary() {
       <button class="btn-outline" onclick="copyTitles()" ${kept.length ? "" : "disabled"}>📋 复制清单</button>
       <button class="btn-outline" onclick="continueTriage()" ${nextUndecided() === -1 ? "disabled" : ""}>▶ 继续筛选</button>
       <button class="btn-outline" onclick="resetDay()">🔄 重新筛选</button>
+      <button class="${!isArchived(state.date) && nextUndecided() === -1 && !kept.length ? "btn-primary" : "btn-outline"}" onclick="archiveDay()">🗄 ${isArchived(state.date) ? "取消归档" : nextUndecided() === -1 && !kept.length ? "本日已处理完,归档" : "归档本日"}</button>
     </div>
     <div id="pushStatus" class="status"></div>
     ${items || (pushed ? '<div class="empty">✅ 保留的论文已全部推送完毕。</div>' : '<div class="empty">还没有保留任何论文。</div>')}
@@ -269,6 +294,30 @@ function continueTriage() { render(); }
 function resetDay() {
   if (!confirm("清空本日所有跳过/保留记录,重新开始?")) return;
   state.decisions = {}; store.save(); render();
+}
+function archiveDay() {
+  if (isArchived(state.date)) {
+    setArchived(state.date, false);
+    renderDateOptions();
+    renderSummary();
+    return;
+  }
+  const undecided = state.papers.length - decidedCount();
+  const kept = keptIndices().length;
+  if ((undecided || kept) && !confirm(
+    `本日还有 ${undecided} 篇未筛、${kept} 篇已保留未推送。归档后此日期将从列表隐藏` +
+    "(记录保留,勾选「含已归档」随时找回)。确定归档?")) return;
+  setArchived(state.date, true);
+  const next = state.dates.find(d => !isArchived(d));
+  if (next) {
+    state.date = next;
+    renderDateOptions();
+    loadDay();
+  } else {
+    renderDateOptions();
+    $("deckActions").hidden = true;
+    $("main").innerHTML = '<div class="empty">🎉 所有日期都已处理完并归档。<br>勾选「含已归档」可回看历史。</div>';
+  }
 }
 
 $("skipBtn").onclick = () => decide("skip");
