@@ -18,21 +18,36 @@ class Paper:
     pdf_url: Optional[str] = None
     full_text: Optional[str] = None
     tldr: Optional[str] = None
+    title_zh: Optional[str] = None  # title translated into llm.language (None when language is English)
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')
-        prompt = (
-            f"Given the following information of a paper, write a concise summary in {lang} "
-            "of 3-5 sentences covering: the research problem, the method or approach, and the "
-            "key results (include concrete numbers such as accuracy or improvements when present). "
-            "Output only the summary text itself, without any preamble like 'Here is the summary'. "
-            "If only a title or search keywords are provided without a real abstract or full text, "
-            "do NOT invent findings; instead reply with one short sentence stating what the paper "
-            "appears to be about based on its title, prefixed with '(仅含标题)' when the language is Chinese "
-            "or '(title only)' otherwise.\n\n"
-        )
+        translate_title = lang.lower() != 'english'
+        if translate_title:
+            prompt = (
+                "Given the following information of a paper, return a JSON object with exactly two string fields:\n"
+                f'  "title_translated": a faithful, fluent translation of the paper title into {lang} '
+                "(keep well-known model/method names such as Mamba, U-Net, Transformer in their original form);\n"
+                f'  "tldr": a concise summary in {lang} of 3-5 sentences covering: the research problem, '
+                "the method or approach, and the key results (include concrete numbers such as accuracy "
+                "or improvements when present).\n"
+                "Output ONLY the JSON object, no code fences, no preamble. "
+                "If only a title or search keywords are provided without a real abstract or full text, "
+                'do NOT invent findings; set "tldr" to one short sentence prefixed with "(仅含标题)" '
+                "stating what the paper appears to be about based on its title.\n\n"
+            )
+        else:
+            prompt = (
+                f"Given the following information of a paper, write a concise summary in {lang} "
+                "of 3-5 sentences covering: the research problem, the method or approach, and the "
+                "key results (include concrete numbers such as accuracy or improvements when present). "
+                "Output only the summary text itself, without any preamble like 'Here is the summary'. "
+                "If only a title or search keywords are provided without a real abstract or full text, "
+                "do NOT invent findings; instead reply with one short sentence stating what the paper "
+                "appears to be about based on its title, prefixed with '(title only)'.\n\n"
+            )
         if self.title:
             prompt += f"Title:\n {self.title}\n\n"
 
@@ -65,9 +80,22 @@ class Paper:
             ],
             **llm_params.get('generation_kwargs', {})
         )
-        tldr = response.choices[0].message.content
-        return tldr
-    
+        content = response.choices[0].message.content
+        if not translate_title:
+            return content
+        # Parse the {"title_translated", "tldr"} JSON; fall back gracefully so a
+        # malformed response degrades to an untranslated title, never a crash.
+        try:
+            match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+            data = json.loads(match.group(0))
+            translated = str(data.get("title_translated") or "").strip()
+            if translated and translated.lower() != self.title.lower():
+                self.title_zh = translated
+            return str(data.get("tldr") or "").strip() or content
+        except Exception as e:
+            logger.warning(f"Failed to parse translated-title JSON for {self.url}: {e}")
+            return content
+
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
         try:
             tldr = self._generate_tldr_with_llm(openai_client,llm_params)

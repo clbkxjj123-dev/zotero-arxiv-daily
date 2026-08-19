@@ -159,6 +159,7 @@ class Executor:
             abstract = p.abstract if p.abstract not in (p.title, raw_title) else ""
             records.append({
                 "title": p.title,
+                "title_zh": p.title_zh,
                 "authors": list(p.authors or []),
                 "abstract": abstract,
                 "tldr": p.tldr,

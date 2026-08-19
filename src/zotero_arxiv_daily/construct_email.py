@@ -139,7 +139,14 @@ def render_email(papers:list[Paper], card_page_url:str=None) -> str:
             link, link_label = p.pdf_url, "PDF"
         else:
             link, link_label = (p.url or "#"), "链接"
-        parts.append(get_block_html(p.title, authors, rate, p.tldr, link, affiliations, link_label))
+        if p.title_zh:
+            display_title = (
+                f'{p.title_zh}<br>'
+                f'<span style="font-size: 14px; font-weight: normal; color: #999;">{p.title}</span>'
+            )
+        else:
+            display_title = p.title
+        parts.append(get_block_html(display_title, authors, rate, p.tldr, link, affiliations, link_label))
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)

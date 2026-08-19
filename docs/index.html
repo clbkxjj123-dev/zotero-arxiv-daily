@@ -39,6 +39,7 @@
   .card h2 a:hover { color: var(--accent); }
   .authors { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
   .tldr { font-size: 14.5px; line-height: 1.65; background: #f8fafc; border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: 0 8px 8px 0; }
+  .title-en { font-size: 13px; color: #94a3b8; line-height: 1.4; margin: -4px 0 2px 0; }
   details { margin-top: 10px; font-size: 13.5px; color: var(--muted); line-height: 1.6; }
   details summary { cursor: pointer; color: var(--accent); }
   .cardlinks { margin-top: 12px; }
@@ -161,7 +162,8 @@ function render() {
         <span class="badge src">${esc(p.source || "")}</span>
         ${p.score != null ? `<span class="badge score">相关度 ${p.score}</span>` : ""}
       </div>
-      <h2><a href="${esc(link)}" target="_blank" rel="noopener">${esc(title)}</a></h2>
+      <h2><a href="${esc(link)}" target="_blank" rel="noopener">${esc(p.title_zh || title)}</a></h2>
+      ${p.title_zh ? `<div class="title-en">${esc(title)}</div>` : ""}
       <div class="authors">${esc((p.authors || []).slice(0, 8).join(", "))}${(p.authors || []).length > 8 ? " 等" : ""}</div>
       <div class="tldr">${esc(p.tldr || "(无 TLDR)")}</div>
       ${p.abstract ? `<details><summary>原文摘要</summary>${esc(p.abstract)}</details>` : ""}
@@ -179,7 +181,7 @@ function renderSummary() {
     const p = state.papers[i];
     const { venue, title } = splitVenue(p.title);
     return `<div class="kept-item">
-      <a href="${esc(p.pdf_url || p.url || "#")}" target="_blank" rel="noopener">${esc(title)}</a>
+      <a href="${esc(p.pdf_url || p.url || "#")}" target="_blank" rel="noopener">${esc(p.title_zh || title)}</a>
       <div class="meta">${venue ? esc(venue) + " · " : ""}${esc(p.source)} · 相关度 ${p.score ?? "?"}
         <button class="remove" onclick="unkeep(${i})">移除</button></div>
     </div>`;
