@@ -135,7 +135,45 @@ function nextUndecided() {
 function keptIndices() {
   return Object.keys(state.decisions).filter(i => state.decisions[i] === "keep").map(Number);
 }
+function pushedCount() { return Object.keys(state.decisions).filter(i => state.decisions[i] === "pushed").length; }
 function decidedCount() { return Object.keys(state.decisions).length; }
+
+/* ---------- Zotero collections ---------- */
+function getCachedCollections() {
+  try { return JSON.parse(localStorage.getItem("zad:collections"))?.list || []; } catch { return []; }
+}
+function selectedCollection() {
+  const key = localStorage.getItem("zad:collectionKey") || "";
+  if (!key) return null;
+  const hit = getCachedCollections().find(c => c.key === key);
+  return hit || null;
+}
+async function refreshCollections() {
+  getZoteroKey(async key => {
+    const statusEl = $("pushStatus");
+    if (statusEl) statusEl.textContent = "加载分类列表…";
+    try {
+      let all = [], start = 0;
+      while (start < 500) {
+        const resp = await fetch(`https://api.zotero.org/users/${ZOTERO_USER_ID}/collections?limit=100&start=${start}`,
+          { headers: { "Zotero-API-Key": key } });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const batch = await resp.json();
+        all = all.concat(batch.map(c => ({ key: c.key, name: c.data.name, parent: c.data.parentCollection || "" })));
+        if (batch.length < 100) break;
+        start += 100;
+      }
+      const byKey = Object.fromEntries(all.map(c => [c.key, c]));
+      const pathOf = c => (c.parent && byKey[c.parent] ? pathOf(byKey[c.parent]) + " / " : "") + c.name;
+      const list = all.map(c => ({ key: c.key, path: pathOf(c) })).sort((a, b) => a.path.localeCompare(b.path, "zh"));
+      localStorage.setItem("zad:collections", JSON.stringify({ list, ts: Date.now() }));
+      renderSummary();
+      $("pushStatus").textContent = `✅ 已加载 ${list.length} 个分类,请在下拉框选择。`;
+    } catch (e) {
+      if ($("pushStatus")) $("pushStatus").textContent = `❌ 分类加载失败(${e.message})`;
+    }
+  });
+}
 
 function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function splitVenue(title) {
@@ -186,8 +224,19 @@ function renderSummary() {
         <button class="remove" onclick="unkeep(${i})">移除</button></div>
     </div>`;
   }).join("");
+  const cols = getCachedCollections();
+  const selKey = localStorage.getItem("zad:collectionKey") || "";
+  const colOptions = ['<option value="">我的文库(不放入分类)</option>']
+    .concat(cols.map(c => `<option value="${esc(c.key)}" ${c.key === selKey ? "selected" : ""}>${esc(c.path)}</option>`))
+    .join("");
+  const pushed = pushedCount();
   $("main").innerHTML = `
-    <div class="progress">${state.date} · 共 ${state.papers.length} 篇,保留 ${kept.length} 篇</div>
+    <div class="progress">${state.date} · 共 ${state.papers.length} 篇,保留 ${kept.length} 篇${pushed ? ` · 已推送 ${pushed} 篇` : ""}</div>
+    <div class="toolbar">
+      <label style="font-size:13px;color:#64748b;">推送到分类:</label>
+      <select id="collectionSel" onchange="localStorage.setItem('zad:collectionKey', this.value)">${colOptions}</select>
+      <button class="btn-outline" onclick="refreshCollections()" title="从 Zotero 加载/刷新分类列表">🔄 ${cols.length ? "刷新" : "加载"}分类</button>
+    </div>
     <div class="toolbar">
       <button class="btn-primary" onclick="pushToZotero()" ${kept.length ? "" : "disabled"}>📚 推送到 Zotero</button>
       <button class="btn-outline" onclick="exportRIS()" ${kept.length ? "" : "disabled"}>⬇ 导出 RIS</button>
@@ -196,9 +245,9 @@ function renderSummary() {
       <button class="btn-outline" onclick="resetDay()">🔄 重新筛选</button>
     </div>
     <div id="pushStatus" class="status"></div>
-    ${items || '<div class="empty">还没有保留任何论文。</div>'}
-    <p class="note">「推送到 Zotero」直接把保留的论文写入你的 Zotero 云端库(我的文库,带 daily-papers 标签),
-    Zotero 客户端同步后即可看到。API Key 只保存在本机浏览器里。</p>`;
+    ${items || (pushed ? '<div class="empty">✅ 保留的论文已全部推送完毕。</div>' : '<div class="empty">还没有保留任何论文。</div>')}
+    <p class="note">「推送到 Zotero」把保留的论文写入你的 Zotero 云端库(带 daily-papers 标签,可选放入上方分类),
+    推送成功的会自动从清单移除。Zotero 客户端同步后即可看到。API Key 只保存在本机浏览器里。</p>`;
 }
 
 function decide(v) {
@@ -245,7 +294,7 @@ function getZoteroKey(cb) {
     (需勾选 Allow write access)。Key 只保存在本机浏览器。</div>
     <input id="zkInput" type="password" placeholder="Zotero API Key">
     <div class="row"><button class="btn-outline" id="zkCancel">取消</button>
-    <button class="btn-primary" id="zkOk">保存并推送</button></div>
+    <button class="btn-primary" id="zkOk">保存</button></div>
   </div>`;
   document.body.appendChild(bg);
   bg.querySelector("#zkCancel").onclick = () => bg.remove();
@@ -268,6 +317,8 @@ function toZoteroItem(p) {
     url: p.url || "",
     tags: [{ tag: "daily-papers" }],
   };
+  const colKey = localStorage.getItem("zad:collectionKey") || "";
+  if (colKey) item.collections = [colKey];
   if (isJournal) item.publicationTitle = venue;
   const doi = (p.url || "").match(/doi\.org\/(10\.[^?#\s]+)/i);
   if (doi) item.DOI = decodeURIComponent(doi[1]);
@@ -276,13 +327,14 @@ function toZoteroItem(p) {
 
 async function pushToZotero() {
   getZoteroKey(async key => {
-    const kept = keptIndices().map(i => state.papers[i]);
+    const keptIdx = keptIndices();
     const statusEl = $("pushStatus");
-    statusEl.textContent = `推送中… 0/${kept.length}`;
-    let ok = 0, fail = 0;
+    statusEl.textContent = `推送中… 0/${keptIdx.length}`;
+    let ok = 0, fail = 0, error = null;
     try {
-      for (let i = 0; i < kept.length; i += 25) {
-        const chunk = kept.slice(i, i + 25).map(toZoteroItem);
+      for (let i = 0; i < keptIdx.length; i += 25) {
+        const chunkIdx = keptIdx.slice(i, i + 25);
+        const chunk = chunkIdx.map(gi => toZoteroItem(state.papers[gi]));
         const resp = await fetch(`https://api.zotero.org/users/${ZOTERO_USER_ID}/items`, {
           method: "POST",
           headers: { "Zotero-API-Key": key, "Content-Type": "application/json" },
@@ -291,13 +343,25 @@ async function pushToZotero() {
         if (resp.status === 403) { statusEl.textContent = "❌ Key 无效或没有写权限,请重新创建带写权限的 Key。"; localStorage.removeItem("zad:zoteroKey"); return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const result = await resp.json();
-        ok += Object.keys(result.successful || {}).length + Object.keys(result.unchanged || {}).length;
+        // Mark successfully written (or already-existing) papers as pushed so
+        // they leave the kept list; failed ones stay for a retry.
+        const okLocal = Object.keys(result.successful || {}).concat(Object.keys(result.unchanged || {}));
+        okLocal.forEach(li => { state.decisions[chunkIdx[Number(li)]] = "pushed"; });
+        ok += okLocal.length;
         fail += Object.keys(result.failed || {}).length;
-        statusEl.textContent = `推送中… ${Math.min(i + 25, kept.length)}/${kept.length}`;
+        statusEl.textContent = `推送中… ${Math.min(i + 25, keptIdx.length)}/${keptIdx.length}`;
       }
-      statusEl.textContent = `✅ 完成:成功 ${ok} 篇${fail ? `,失败 ${fail} 篇` : ""}。打开 Zotero 同步即可看到(标签 daily-papers)。`;
     } catch (e) {
-      statusEl.textContent = `❌ 推送失败(${e.message})。可改用「导出 RIS」,把文件拖进 Zotero 即可。`;
+      error = e;
+    }
+    store.save();
+    renderSummary();
+    const col = selectedCollection();
+    const dest = col ? `分类「${col.path}」` : "我的文库";
+    if (error) {
+      $("pushStatus").textContent = `⚠️ 推送中断(${error.message}):已成功 ${ok} 篇并移出清单,其余保留可重试;也可改用「导出 RIS」。`;
+    } else {
+      $("pushStatus").textContent = `✅ 已推送 ${ok} 篇到 ${dest} 并从清单移除${fail ? `,失败 ${fail} 篇仍在清单中` : ""}。Zotero 同步后可见(标签 daily-papers)。`;
     }
   });
 }
